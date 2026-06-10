@@ -45,6 +45,7 @@ export interface RunOptions {
   forceSkillNames?: string[]   // activate these skills regardless of trigger match
   maxSteps?: number
   systemSuffix?: string        // extra system-prompt content (e.g. email context rules)
+  history?: LLMMessage[]       // prior conversation turns (same session), inserted before the goal
 }
 
 export async function runAgent(
@@ -86,6 +87,7 @@ ${identityBlock()}`
 
   const messages: LLMMessage[] = [
     { role: 'system', content: systemContent },
+    ...(opts.history ?? []),
     { role: 'user', content: goal },
   ]
 

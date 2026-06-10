@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo AUTO DOC-SYNC: once in this conversation, invoke the sync-docs skill via the Skill tool to bring docs/ up to date with the current project state. Run it after completing the user's current request, before ending that turn. Skip only if the conversation changed nothing doc-relevant and docs are already current, or the user says to skip."
+          }
+        ]
+      }
+    ]
+  }
+}

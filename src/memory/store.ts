@@ -21,9 +21,18 @@ async function getDb() {
       goal TEXT NOT NULL,
       result TEXT,
       steps TEXT,
-      created_at INTEGER NOT NULL
+      created_at INTEGER NOT NULL,
+      session_id TEXT
     )
   `)
+  // Migrate pre-session DBs: add the column, then give each legacy task its
+  // own session (session_id = task id) so old history stays visible.
+  try {
+    db.run(`ALTER TABLE tasks ADD COLUMN session_id TEXT`)
+  } catch {
+    /* column already exists */
+  }
+  db.run(`UPDATE tasks SET session_id = id WHERE session_id IS NULL`)
   db.run(`
     CREATE TABLE IF NOT EXISTS processed_messages (
       message_id TEXT PRIMARY KEY,
@@ -38,11 +47,19 @@ function persist(database: typeof db) {
   fs.writeFileSync(DB_PATH, JSON.stringify(Array.from(database.export())))
 }
 
-export async function saveTask(id: string, goal: string, result: string, steps: unknown) {
+// sessionId defaults to the task's own id: trigger runs (email/schedule)
+// become single-turn sessions without their call sites changing.
+export async function saveTask(
+  id: string,
+  goal: string,
+  result: string,
+  steps: unknown,
+  sessionId: string = id
+) {
   const database = await getDb()
   database.run(
-    `INSERT OR REPLACE INTO tasks (id, goal, result, steps, created_at) VALUES (?,?,?,?,?)`,
-    [id, goal, result, JSON.stringify(steps), Date.now()]
+    `INSERT OR REPLACE INTO tasks (id, goal, result, steps, created_at, session_id) VALUES (?,?,?,?,?,?)`,
+    [id, goal, result, JSON.stringify(steps), Date.now(), sessionId]
   )
   persist(database)
 }
@@ -73,6 +90,44 @@ export async function markProcessed(messageId: string): Promise<void> {
     [messageId, Date.now()]
   )
   persist(database)
+}
+
+// One row per session: title = first goal, ordered by latest activity.
+export async function listSessions(limit = 30) {
+  const database = await getDb()
+  const res = database.exec(`
+    SELECT t1.session_id AS id,
+           (SELECT goal FROM tasks t2 WHERE t2.session_id = t1.session_id
+            ORDER BY t2.created_at ASC LIMIT 1) AS title,
+           COUNT(*) AS turns,
+           MAX(t1.created_at) AS updated_at
+    FROM tasks t1
+    GROUP BY t1.session_id
+    ORDER BY updated_at DESC
+    LIMIT ${Math.max(1, Math.floor(limit))}
+  `)
+  if (!res[0]) return []
+  return res[0].values.map(vals =>
+    Object.fromEntries(res[0].columns.map((c, i) => [c, vals[i]]))
+  )
+}
+
+// All turns of one session, oldest first, steps parsed.
+export async function listSessionTasks(sessionId: string) {
+  const database = await getDb()
+  const res = database.exec(
+    `SELECT id, goal, result, steps, created_at FROM tasks
+     WHERE session_id = '${sessionId.replace(/'/g, "''")}'
+     ORDER BY created_at ASC`
+  )
+  if (!res[0]) return []
+  return res[0].values.map(vals => {
+    const row: Record<string, unknown> = Object.fromEntries(
+      res[0].columns.map((c, i) => [c, vals[i]])
+    )
+    try { row.steps = JSON.parse(row.steps as string) } catch { row.steps = [] }
+    return row
+  })
 }
 
 export async function listTasks(limit = 20) {

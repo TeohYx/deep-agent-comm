@@ -1,6 +1,6 @@
 # Architecture — Communication-Channel Deep Agent
 
-> **Status:** DRAFT for review
+> **Status:** v1 BUILT (updated 2026-06-10). Open questions resolved in `answer-for-md.md`; per-layer build state in §3.
 > **Scope:** A deep agent whose primary entry point is a communication channel (Gmail first; Messenger / Teams / Slack later). It reads incoming messages, classifies intent, and fulfills tasks using skills, sub-agents, sandboxed code execution, external APIs (MCP), and on-demand SQL.
 
 ---
@@ -67,20 +67,23 @@ Everything else (memory, MCP, SQL, governance) is supporting infrastructure arou
 
 | Layer | Component | Status | File(s) |
 |---|---|---|---|
-| L2 | Agent loop (think/act/observe) | ✅ built | `src/core/agent.ts` |
+| L2 | Agent loop (think/act/observe, multi-turn `history`) | ✅ built | `src/core/agent.ts` |
 | L2 | LLM brain (DeepSeek) | ✅ built | `src/core/llm.ts` |
-| L2 | Skill system (prompt-based) | ✅ built | `src/skills/` |
+| L2 | Skill system (prompt-based, `intent`/`subagent` frontmatter) | ✅ built | `src/skills/` |
 | L3 | Tool system + registry | ✅ built | `src/tools/`, `src/registry/` |
-| L5 | Task memory (SQLite) | ✅ built | `src/memory/store.ts` |
-| — | HTTP API + Web UI | ✅ built | `src/api/`, `public/` |
-| **L0** | **Channel adapters (Gmail…)** | 🔲 new | `src/channels/` |
-| **L1** | **Intent classifier** | 🔲 new | `src/intent/` |
-| **L2** | **Sub-agent spawning** | 🔲 new | extend `agent.ts` |
-| **L4** | **Sandbox runtime** | 🔲 new | `src/sandbox/` |
-| **L3** | **excel/chart/sql/MCP tools** | 🔲 new | `src/tools/` |
+| L5 | Task memory (SQLite via sql.js) | ✅ built | `src/memory/store.ts` |
+| L5 | **Session memory** — web chats grouped into sessions; prior turns replayed to the agent (capped 8 turns / 2000 chars per result); isolated between sessions | ✅ built | `src/memory/store.ts` (`session_id`), `src/api/server.ts` (`sessionHistory`) |
+| — | HTTP API + Web UI (Claude-chat style: session history sidebar, hover flyout → Tools/Skills catalog with build statuses) | ✅ built | `src/api/server.ts`, `public/` |
+| L0 | Channel adapter: Gmail (REST API, OAuth2; IMAP dormant) | ✅ built | `src/channels/gmail-api.ts` (`gmail.ts` dormant) |
+| L1 | Intent classifier | ✅ built | `src/intent/classifier.ts` |
+| L2 | Sub-agent spawning (`spawn_subagent`) | ✅ built | `src/tools/subagent.ts` |
+| L4 | Sandbox runtime (child process, fs-locked) | ✅ built | `src/sandbox/runner.ts` |
+| L3 | excel / chart / sql tools | ✅ built | `src/tools/{excel,chart,sql}.ts` |
+| L3 | MCP client | 🔲 Phase 5b | `src/tools/mcp.ts` (planned) |
+| L0 | Other channels (Teams/Slack/Messenger) | 🔲 later | `src/channels/` |
 | **L6** | **Governance** | 🔲 later | `src/governance/` |
 
-> Key point: the **engine (L2) already exists**. New work is mostly **wrapping it** (channels in front, sandbox/tools below).
+> The engine (L2) came first; channels/sandbox/tools wrapped it as planned. The IMAP→Gmail API migration proved the layering: only L0 changed.
 
 ---
 
@@ -217,7 +220,7 @@ Sender emails: *"Hi, can you take the attached sales.xlsx and send me back a cha
 
 ---
 
-## 9. Open questions for review (decide before building)
+## 9. Open questions — RESOLVED (see `answer-for-md.md`)
 
 1. **Channel scope for v1** — Gmail only first, or design adapter interface now and stub the rest? (Recommend: Gmail only, but `Channel` interface from day 1.) **DECIDED:** Gmail only; default mailbox `yeexianteoh1223@gmail.com` (`DEFAULT_GMAIL_USER` in `src/channels/gmail.ts`); override via `GMAIL_USER` env. App password must be set via `GMAIL_APP_PASSWORD` env (no default for credentials).
 2. **Sandbox technology** — options: Docker container, Node `worker_threads` + `vm`, a microVM (Firecracker), or a hosted code-exec service (e.g. E2B). Trade-off: isolation strength vs. setup complexity on Windows. (Recommend: start with a separate Node child-process + restricted fs for v1; move to Docker/E2B when code-exec risk grows.)
@@ -228,15 +231,29 @@ Sender emails: *"Hi, can you take the attached sales.xlsx and send me back a cha
 
 ---
 
-## 10. Build order (proposed)
+## 10. Build order — progress
 
 ```
-Phase 1  Gmail channel adapter (read inbox, send draft) + Message shape   [L0]
-Phase 2  Intent classifier → route to existing skill system               [L1]
-Phase 3  Sandbox runtime + sub-agent spawning                             [L4/L2]
-Phase 4  excel_read / excel_write / chart_generate tools                  [L3]
-Phase 5  sql_query (read-only) + MCP client                               [L3]
-Phase 6  Governance: constitution, roles, guardrails, audit               [L6]
+Phase 1  Gmail channel adapter + Message shape                            [L0]  ✅ (migrated IMAP → Gmail API)
+Phase 2  Intent classifier → route to existing skill system               [L1]  ✅
+Phase 3  Sandbox runtime + sub-agent spawning                             [L4/L2] ✅
+Phase 4  excel_read / excel_write / chart_generate tools                  [L3]  ✅
+Phase 5  sql_query (read-only)                                            [L3]  ✅
+Phase 5b MCP client                                                       [L3]  🔲 next
+Phase 6  Governance: constitution, roles, guardrails, audit               [L6]  🔲 later
 ```
 
 Each phase is independently demoable. We stop and review between phases.
+
+---
+
+## 11. Web UI & session memory (added 2026-06-10)
+
+The manual trigger (web UI / `POST /run`) is now **session-aware**:
+
+- Every run belongs to a **session** (`tasks.session_id`). `POST /run` without a `sessionId` starts a new session and returns its id; with a `sessionId` it continues that conversation.
+- Before each run, the server replays the session's prior turns to `runAgent()` as plain user/assistant messages (`RunOptions.history`) — capped at the **last 8 turns, 2000 chars per result**. Memory is **per-session only**; sessions are isolated from each other.
+- Trigger-created tasks (email / schedule) become single-turn sessions automatically (`saveTask` defaults `sessionId` to the task id).
+- Endpoints: `GET /sessions` (list — title, turn count, last activity), `GET /sessions/:id` (all turns).
+- UI (`public/`): Claude-chat style — sidebar shows session history only; a hover area at the sidebar foot opens a flyout to the **Tools / Skills catalog**, which mirrors `03-communication-layer.md` (ready / in progress / planned / withheld) and marks live-registered entries with a green dot.
+- Known limit: skill matching runs on the current goal only, not history — follow-ups rely on the LLM's replayed context rather than re-triggering skill prompts.

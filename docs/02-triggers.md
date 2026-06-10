@@ -1,6 +1,6 @@
 # Trigger Types — How the Agent Wakes Up
 
-> **Status:** DRAFT for review
+> **Status:** v1 BUILT (updated 2026-06-10). ①②④⑤ live; ③⑥ not built. Open questions resolved in `answer-for-md.md`.
 > **Purpose:** Catalog every way the deep agent can be started, which ones matter for a Gmail-centric communication agent, and how each maps onto the existing `runAgent()` engine.
 
 ---
@@ -81,14 +81,14 @@ Lower priority for v1 unless a non-email data source needs reacting to.
 
 ## 2. Priority for THIS project
 
-| Trigger | Priority | Why |
-|---|---|---|
-| ① Inbound email | **P0 — core** | This is literally what a communication agent *is*. |
-| ④ Manual (UI/API) | **P0 — have it** | Already built; keep for testing/admin. |
-| ② Schedule | **P1** | Digests, reminders, periodic reports. High value, low effort. |
-| ⑤ Agent→agent | **P1** | Needed once sandbox/sub-agents land (architecture Phase 3). |
-| ③ Webhook | **P2** | Add when a specific external event source appears. |
-| ⑥ State poll | **P3** | Only if a non-email data source needs watching. |
+| Trigger | Priority | Status | Notes |
+|---|---|---|---|
+| ① Inbound email | **P0 — core** | ✅ built | 60s poll, allow-list + Message-ID dedupe (`src/triggers/email.ts`). Pub/Sub push reachable via `gmail_watch` (needs Cloud topic). |
+| ④ Manual (UI/API) | **P0 — have it** | ✅ built | `POST /run` — now **session-aware**: carries `sessionId`, prior turns replayed as agent memory (see `01-architecture.md` §11). |
+| ② Schedule | **P1** | ✅ built | Inbox digest 08:00 + unanswered-nudge 17:30, weekdays (`src/triggers/schedule.ts`). Read + draft only. |
+| ⑤ Agent→agent | **P1** | ✅ built | `spawn_subagent` → sandboxed least-privilege sub-agent (`src/tools/subagent.ts`). |
+| ③ Webhook | **P2** | 🔲 | Add when a specific external event source appears. |
+| ⑥ State poll | **P3** | 🔲 | Only if a non-email data source needs watching. |
 
 ---
 
@@ -138,10 +138,10 @@ app.post('/webhook/:source', (req, res) => runAgent(goalFrom(req.body), tools, s
 
 ---
 
-## 5. Open questions for review
+## 5. Open questions — RESOLVED (see `answer-for-md.md`)
 
-1. **Push vs poll for Gmail** — accept poll latency (simple) or set up Pub/Sub push (fast, more infra)? (Recommend: poll for v1.)
-2. **Allow-list vs open** — restrict to known senders/labels first? (Recommend: yes, allow-list.)
-3. **Poll interval** — 30s? 5min? Trade latency vs API quota/cost. (Recommend: 60s for v1.)
-4. **Which schedules matter** — what periodic jobs do you actually want? (digest? unanswered-mail nudge?)
-5. **Per-trigger skill restriction** — should a scheduled trigger be allowed to *send* email, or only draft/report? (Recommend: schedule can read+draft, never auto-send.)
+1. **Push vs poll for Gmail** — ✅ poll for v1 (Pub/Sub push now reachable post-Gmail-API-migration; `gmail_watch` built, needs a Cloud topic).
+2. **Allow-list vs open** — ✅ allow-list (`ALLOWED_SENDERS` in `.env`).
+3. **Poll interval** — ✅ 60 seconds.
+4. **Which schedules** — ✅ inbox digest (08:00 weekdays) + unanswered-mail nudge (17:30 weekdays).
+5. **Per-trigger skill restriction** — ✅ schedules read + draft, never auto-send (no send tool exists at all).

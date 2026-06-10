@@ -151,7 +151,7 @@ Verified: `excel_read → chart_generate → gmail_create_draft → gmail_mark_r
 
 ## 4. Cross-cutting features every comm tool needs
 
-1. **Threading** — operate on the *thread*, not a lone message. Now **native** (`gmail_get_thread` via `threadId`); replies thread via `In-Reply-To`/`References` + Gmail `threadId`. ✅
+1. **Threading** — operate on the *thread*, not a lone message. Now **native** (`gmail_get_thread` via `threadId`); replies thread via `In-Reply-To`/`References` + Gmail `threadId`. Web chats get the equivalent via **session memory**: prior turns of the same session are replayed to the agent (capped 8 turns / 2000 chars per result), isolated between sessions (`01-architecture.md` §11). ✅
 2. **Draft-by-default** — agent prepares, human sends. Enforced by absence of a send tool. ✅
 3. **Idempotency** — never process the same message twice (`processed_messages` dedupe by Gmail id). ✅
 4. **Attachment safety** — size caps, .xlsx/.csv allow-list, sub-agent/sandbox handling. ✅
@@ -166,11 +166,14 @@ Verified: `excel_read → chart_generate → gmail_create_draft → gmail_mark_r
 | Thing | Where |
 |---|---|
 | Gmail tools | `src/tools/gmail.ts` → `GmailApiChannel` (`src/channels/gmail-api.ts`) |
+| Gmail settings tools | `src/tools/gmail-settings.ts` |
 | Data tools | `src/tools/{excel,chart,sql,runCode,subagent}.ts` |
 | Skills | `src/skills/*.md` + loader (frontmatter `intent`/`subagent`) |
 | Intent routing | `src/intent/classifier.ts` (L1) |
 | Reply tone | same mechanism as `caveman` skill |
 | Sub-agent | `spawn_subagent` → `runAgent()` with least-privilege toolset |
+| Session memory (web chat) | `src/memory/store.ts` (`session_id`), `src/api/server.ts` (`sessionHistory`, `GET /sessions`) |
+| Tools/Skills catalog UI | `public/app.js` (`TOOL_CATALOG`/`SKILL_CATALOG` — mirrors this doc; update both together) |
 
 > The communication layer is **new tools + skill files** on the **existing engine**. The Gmail API migration changed only L0.
 
