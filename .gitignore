@@ -4,3 +4,5 @@ dist/
 *.db
 *.db.json
 scratch/
+secrets/
+*.token.json

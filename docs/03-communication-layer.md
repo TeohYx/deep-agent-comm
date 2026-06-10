@@ -1,7 +1,8 @@
-# Communication Layer — Most Important Tools & Skills
+# Communication Layer — Tools & Skills
 
-> **Status:** DRAFT for review
-> **Purpose:** Define the highest-value **tools** (actions) and **skills** (intents/playbooks) for a Gmail-first communication agent. This is the menu we'll build from — ranked, not exhaustive.
+> **Status:** v1 BUILT (updated 2026-06-10). Originally a "menu to build from"; now reflects what is actually implemented.
+> **Transport:** Gmail REST API (OAuth2) — migrated from IMAP. See `docs/gmail_channel_functionality.md` for the full per-capability matrix and `docs/answer-for-md.md` for locked decisions.
+> **Legend:** ✅ built · ◐ partial · 🔲 planned, not built · ⭕ now reachable on Gmail API, not built · 🚫 withheld (guardrail).
 
 ---
 
@@ -10,7 +11,7 @@
 | | Tool | Skill |
 |---|---|---|
 | Is | code that *does* something | prompt/playbook for an *intent* |
-| Example | `gmail_send_draft` | `draft-reply` |
+| Example | `gmail_create_draft` | `draft-reply` |
 | Picked by | the agent, mid-task | the intent classifier, up front |
 | Returns | data / side-effect | shapes behavior, orchestrates tools |
 
@@ -18,131 +19,173 @@ A **skill** orchestrates **tools**. E.g. the `draft-reply` skill reads a thread 
 
 ---
 
-## 1. TOOLS — ranked by value
+## 1. TOOLS — by value
 
-### Tier 1 — Gmail core (build first, P0)
-The minimum set to be a useful email agent.
+### Tier 1 — Gmail core (P0) — BUILT
+The actual Gmail toolset (10 tools). Names below are the real registered tool names. **There is no `gmail_send` — draft-only is enforced by its absence** (decision `answer-for-md.md` #3/#4).
 
-| Tool | Does | Notes / safety |
+**Read:**
+| Tool | Does | Status |
 |---|---|---|
-| `gmail_list_messages` | list inbox / search by query | supports Gmail search syntax (`from:`, `is:unread`, `label:`) |
-| `gmail_get_thread` | fetch full thread (all messages) | agent needs full context, not one mail |
-| `gmail_get_attachment` | download an attachment | size cap; hand to sandbox, never load blindly |
-| `gmail_create_draft` | create a reply **draft** | **SAFE default** — human approves send |
-| `gmail_send` | send mail | **GUARDED** — off until guardrails exist |
-| `gmail_modify_labels` | add/remove labels, mark read | used to mark threads "handled" |
+| `gmail_search` | full Gmail query syntax (`from:`, `is:unread`, `has:attachment`, `newer_than:`…) — the real abstraction | ✅ |
+| `gmail_list_unread` | narrow: most-recent unread only (advertises its narrowness) | ✅ |
+| `gmail_get_message` | full body + **HTML body** + attachment metadata by Message-ID; `download=true` materializes sheets | ✅ |
+| `gmail_get_thread` | whole conversation, ordered — **native threadId** | ✅ |
+| `gmail_get_attachment` | download **any** attachment type by filename | ✅ |
 
-### Tier 2 — Content / data work (P1)
-What the agent *does* with email content. Most run in the **sandbox**.
-
-| Tool | Does | Runs in sandbox? |
+**Write (drafts only — `gmail_send` 🚫 not registered):**
+| Tool | Does | Status |
 |---|---|---|
-| `excel_read` | parse .xlsx/.csv → structured rows | yes (untrusted file) |
-| `excel_write` | build a .xlsx from data | yes (code exec) |
-| `chart_generate` | data → chart image (png) | yes (code exec) |
-| `pdf_read` | extract text/tables from PDF | yes (untrusted file) |
-| `sql_query` | run SELECT against a DB | guarded; read-only v1 |
-| `http_request` | call an external REST API | allow-listed domains only |
+| `gmail_create_draft` | reply / new draft; `cc[]` = reply-all; `inReplyTo` threads; `attachmentPaths[]` | ✅ |
+| `gmail_forward_draft` | forward draft carrying original body + attachments | ✅ |
+| `gmail_update_draft` | in-place draft edit (native `drafts.update`) | ✅ |
+| `gmail_list_drafts` / `gmail_delete_draft` | manage drafts as first-class objects | ✅ |
 
-### Tier 3 — Extensibility (P1–P2)
-| Tool | Does |
-|---|---|
-| `mcp_*` | dynamically discovered external tools (CRM, calendar, internal systems) via MCP |
-| `web_fetch` | fetch a URL's content (already built) |
-| `calculator` | math (already built) |
+**Organize:**
+| Tool | Does | Status |
+|---|---|---|
+| `gmail_organize` | mark_read/unread, star/unstar, **mark_important/unmark_important**, archive, trash, **restore** | ✅ |
+| `gmail_label` | apply/remove a label by name (auto-creates on apply) | ✅ |
+| `gmail_manage_labels` | list / create / delete labels | ✅ |
+| `gmail_mark_read` | shortcut used by triggers | ✅ |
+
+**Sync:**
+| Tool | Does | Status |
+|---|---|---|
+| `gmail_history` | incremental changes since a `historyId` cursor | ✅ |
+| `gmail_watch` | start/stop Pub/Sub push on INBOX | ◐ needs Cloud Pub/Sub topic |
+
+**Settings (need re-consent for `gmail.settings.*` scopes):**
+| Tool | Does | Status |
+|---|---|---|
+| `gmail_filters` | list / create / delete server-side filters | ✅ |
+| `gmail_vacation` | get / set vacation auto-responder | ✅ |
+| `gmail_sendas` | list aliases / update signature | ✅ |
+| `gmail_forwarding` | list forwarding addresses | ✅ |
+| `gmail_imap_pop` | get/toggle IMAP & POP access | ✅ |
+| `gmail_delegates` | list delegates | ◐ Workspace-only (personal Gmail not supported) |
+
+> Withheld by guardrail: `gmail_send` (draft-only), permanent message delete (destructive).
+
+### Tier 2 — Content / data work (P1) — BUILT
+What the agent *does* with email content. Heavy/risky work runs in the **sandbox** via a sub-agent.
+
+| Tool | Does | Sandbox? | Status |
+|---|---|---|---|
+| `excel_read` | parse .xlsx/.csv → rows (cap 100) | in-process v1 | ✅ |
+| `excel_write` | build .xlsx from rows | sub-agent | ✅ |
+| `chart_generate` | data → chart PNG (QuickChart) | sub-agent | ✅ |
+| `sql_query` | single read-only SELECT vs demo DB | guarded | ✅ |
+| `run_code` | run JS in child-process sandbox (fs-locked) | **sub-agent only** | ✅ |
+| `spawn_subagent` | delegate to isolated least-privilege sub-agent | — | ✅ |
+| `pdf_read` | extract text/tables from PDF | sandbox | 🔲 (.xlsx/.csv only in v1) |
+| `http_request` | call external REST API | allow-listed | 🔲 |
+
+### Tier 3 — Extensibility & utility
+| Tool | Does | Status |
+|---|---|---|
+| `web_fetch` | fetch a URL's content | ✅ |
+| `calculator` | math | ✅ |
+| `echo` | pipeline test | ✅ |
+| `mcp_*` | dynamically discovered external tools via MCP | 🔲 (Phase 5b) |
 
 ### Tier 4 — Other channels (P2, later)
-Same *interface*, different backend — proves the channel abstraction.
+Same `Channel` interface, different backend — proves the abstraction. The Gmail migration validated the swap (IMAP→API touched only L0).
 
-| Tool | Channel |
-|---|---|
-| `teams_send` / `teams_get` | Microsoft Teams |
-| `slack_send` / `slack_get` | Slack |
-| `messenger_send` | Messenger |
+| Tool | Channel | Status |
+|---|---|---|
+| `teams_*` | Microsoft Teams | 🔲 |
+| `slack_*` | Slack | 🔲 |
+| `messenger_*` | Messenger | 🔲 |
 
 ---
 
-## 2. SKILLS — ranked by value
+## 2. SKILLS — by value
 
-Each skill = an **intent** the sender might have. Skill frontmatter gains two fields: `intent` (for the classifier) and `subagent` (whether it spawns a sandboxed sub-agent).
+Skill frontmatter carries `intent` (for the L1 classifier) and `subagent` (whether it delegates to a sandboxed sub-agent).
 
 ### Tier 1 — Email triage & response (P0)
-The bread and butter.
+| Skill | Intent | What it does | Tools used | Sub-agent? | Status |
+|---|---|---|---|---|---|
+| `summarize-thread` | summarize | TL;DR a thread | `gmail_get_thread`, `gmail_create_draft` | no | ✅ |
+| `draft-reply` | compose | contextual reply draft | `gmail_get_thread`, `gmail_create_draft` | no | ✅ |
+| `clarify` | clarify | fallback when intent unclear → asks sender | `gmail_create_draft` | no | ✅ |
+| `triage-inbox` | triage | classify/label/flag unread | `gmail_search`, `gmail_organize` | no | 🔲 |
+| `extract-action-items` | extract | pull tasks/dates/asks | `gmail_get_thread` | no | 🔲 |
 
-| Skill | Intent | What it does | Tools used | Sub-agent? |
+### Tier 2 — Data tasks from email (P1) — the "wow" features
+Need the **sandbox + sub-agent**. This is the "read excel, generate excel, graph" requirement.
+
+| Skill | Intent | What it does | Sub-agent? | Status |
 |---|---|---|---|---|
-| `summarize-thread` | summarize | TL;DR a long email thread | `gmail_get_thread` | no |
-| `draft-reply` | compose | draft a contextual reply (tone-aware) | `gmail_get_thread`, `gmail_create_draft` | no |
-| `triage-inbox` | triage | classify/label unread mail, flag urgent | `gmail_list_messages`, `gmail_modify_labels` | no |
-| `extract-action-items` | extract | pull tasks/dates/asks from a thread | `gmail_get_thread` | no |
+| `excel-to-chart` | visualize | attached sheet → chart PNG → reply draft | **yes** | ✅ |
+| `excel-analyze` | analyze | read sheet, answer questions about the data | **yes** | ✅ |
+| `data-query` | data-query | NL question → read-only SQL → plain-English reply | no | ✅ |
+| `excel-generate` | generate | build a new spreadsheet from a request | **yes** | 🔲 |
+| `report-build` | report | gather data + build formatted excel/pdf, attach | **yes** | 🔲 |
 
-### Tier 2 — Data tasks from email (P1) — **the "wow" features**
-These need the **sandbox + sub-agent** (architecture §6). This is where your "read excel, generate excel, graph" requirement lives.
-
-| Skill | Intent | What it does | Sub-agent? |
+### Tier 3 — Integration & proactive
+| Skill | Intent | What it does | Status |
 |---|---|---|---|
-| `excel-to-chart` | visualize | attached sheet → chart image → reply with png | **yes** |
-| `excel-analyze` | analyze | read sheet, answer questions about the data | **yes** |
-| `excel-generate` | generate | build a new spreadsheet from a request/data | **yes** |
-| `data-query` (`sql-answer`) | data-query | NL question → SQL → answer in plain English | yes (guarded) |
-| `report-build` | report | gather data + build formatted excel/pdf, attach to reply | **yes** |
-
-### Tier 3 — Integration & proactive (P1–P2)
-| Skill | Intent | What it does |
-|---|---|---|
-| `mcp-fetch` | integrate | pull/push data to an external system via MCP |
-| `inbox-digest` | digest | (schedule-triggered) summarize inbox → send digest |
-| `unanswered-nudge` | followup | (schedule) find stale threads needing a reply |
+| `inbox-digest` | digest | (schedule 08:00) summarize unread → digest draft | ✅ |
+| unanswered-nudge | followup | (schedule 17:30) flag stale unread → nudge draft | ✅ (inline in `triggers/schedule.ts`, not a skill file) |
+| `mcp-fetch` | integrate | pull/push to an external system via MCP | 🔲 (Phase 5b) |
 
 ---
 
-## 3. The flagship flow — what to demo first
+## 3. The flagship flow — DONE ✅
 
-**"Email an excel, get a chart back."** It exercises the whole stack and is visually obvious:
+**"Email an excel, get a chart back."** Proven end-to-end:
 
 ```
 sender emails sales.xlsx + "chart revenue by month"
    → intent: visualize → skill: excel-to-chart
-      → sub-agent (sandbox):
+      → spawn_subagent (sandbox):
           excel_read → analyze → chart_generate
       → reply DRAFT with chart.png attached
 ```
 
-If this works end-to-end, the architecture is proven. Recommend it as the **Phase 3/4 milestone**.
+Verified: `excel_read → chart_generate → gmail_create_draft → gmail_mark_read`, all green. The architecture is proven.
 
 ---
 
 ## 4. Cross-cutting features every comm tool needs
 
-These aren't tools themselves but properties the layer must have:
-
-1. **Threading** — always operate on the *thread*, not a lone message. Replies stay in-thread.
-2. **Draft-by-default** — agent prepares, human sends (until guardrails mature).
-3. **Idempotency** — never process the same message twice (dedupe by id).
-4. **Attachment safety** — size caps, type checks, sandbox-only handling.
-5. **Audit trail** — log every read, draft, send, query (feeds governance later).
-6. **Tone / persona control** — a skill should be able to set reply tone (formal, brief, friendly) — reuses the existing skill-prompt mechanism (like `caveman`).
-7. **PII awareness (hook for L6)** — flag when a message/attachment contains sensitive data.
+1. **Threading** — operate on the *thread*, not a lone message. Now **native** (`gmail_get_thread` via `threadId`); replies thread via `In-Reply-To`/`References` + Gmail `threadId`. ✅
+2. **Draft-by-default** — agent prepares, human sends. Enforced by absence of a send tool. ✅
+3. **Idempotency** — never process the same message twice (`processed_messages` dedupe by Gmail id). ✅
+4. **Attachment safety** — size caps, .xlsx/.csv allow-list, sub-agent/sandbox handling. ✅
+5. **Audit trail** — every run + steps saved to the task store; per-action governance log feeds L6. ◐ (task-level ✅, fine-grained action log 🔲)
+6. **Tone / persona control** — skills set reply tone via the prompt mechanism (like `caveman`); drafts signed "Deep Agent (assistant)". ✅
+7. **PII awareness (hook for L6)** — flag sensitive data in a message/attachment. 🔲 (governance phase)
 
 ---
 
 ## 5. Mapping to existing code
 
-| New thing | Reuses what we built |
+| Thing | Where |
 |---|---|
-| Skills above | existing `src/skills/*.md` + loader (just add `intent`/`subagent` frontmatter) |
-| Tools above | existing `Tool` interface + registry (`registry.registerTool`) |
+| Gmail tools | `src/tools/gmail.ts` → `GmailApiChannel` (`src/channels/gmail-api.ts`) |
+| Data tools | `src/tools/{excel,chart,sql,runCode,subagent}.ts` |
+| Skills | `src/skills/*.md` + loader (frontmatter `intent`/`subagent`) |
+| Intent routing | `src/intent/classifier.ts` (L1) |
 | Reply tone | same mechanism as `caveman` skill |
-| Sub-agent | extends `runAgent()` in `src/core/agent.ts` |
+| Sub-agent | `spawn_subagent` → `runAgent()` with least-privilege toolset |
 
-> The communication layer is mostly **new tools + new skill files** plugged into the **existing engine**. Minimal core change.
+> The communication layer is **new tools + skill files** on the **existing engine**. The Gmail API migration changed only L0.
 
 ---
 
-## 6. Open questions for review
+## 6. Decisions (resolved — see `answer-for-md.md`)
 
-1. **Reply tone** — one default persona, or per-sender/per-context tone? (Recommend: one default, overridable by skill.)
-2. **Which Tier-2 data skill first** — `excel-to-chart` (visual, demoable) or `data-query` (SQL)? (Recommend: `excel-to-chart`.)
-3. **Attachment types in scope** — just .xlsx/.csv for v1, or pdf/images too? (Recommend: .xlsx/.csv first.)
-4. **Send authority** — who/what is ever allowed to trigger `gmail_send` (vs draft)? (Recommend: nothing auto-sends in v1.)
-5. **Persona/identity** — does the agent reply *as the user*, or *as a named assistant* ("Sent by Agent on behalf of...")? (Recommend: named assistant — clearer, safer.)
+1. **Reply tone** — ✅ one default persona, overridable by skill.
+2. **First Tier-2 data skill** — ✅ `excel-to-chart` (built, flagship demo proven).
+3. **Attachment types** — ✅ .xlsx/.csv only in v1.
+4. **Send authority** — ✅ nothing auto-sends; no send tool registered.
+5. **Persona** — ✅ named assistant; drafts signed "Deep Agent (assistant)".
+
+### Still open / next
+- **Sync upgrade:** Gmail Pub/Sub push to replace the 60s poll (now reachable — `gmail_channel_functionality.md` §4).
+- **Settings tools:** filters / vacation / send-as (needs `gmail.settings.*` scope + re-consent — §5).
+- **More skills:** triage-inbox, extract-action-items, excel-generate, report-build.
+- **MCP client** (Phase 5b) + **Governance** (Phase 6).

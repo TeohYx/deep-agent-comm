@@ -9,7 +9,8 @@ import { saveTask, getTask, listTasks } from '../memory/store.js'
 import { calculatorTool } from '../tools/calculator.js'
 import { webFetchTool } from '../tools/webFetch.js'
 import { echoTool } from '../tools/echo.js'
-import { gmailListTool, gmailCreateDraftTool, gmailMarkReadTool } from '../tools/gmail.js'
+import { gmailTools } from '../tools/gmail.js'
+import { gmailSettingsTools } from '../tools/gmail-settings.js'
 import { gmailChannel } from '../channels/gmail.js'
 import { excelReadTool, excelWriteTool } from '../tools/excel.js'
 import { chartGenerateTool } from '../tools/chart.js'
@@ -24,9 +25,8 @@ import { startSchedules } from '../triggers/schedule.js'
 registry.registerTool(calculatorTool)
 registry.registerTool(webFetchTool)
 registry.registerTool(echoTool)
-registry.registerTool(gmailListTool)
-registry.registerTool(gmailCreateDraftTool)
-registry.registerTool(gmailMarkReadTool)
+for (const t of gmailTools) registry.registerTool(t)
+for (const t of gmailSettingsTools) registry.registerTool(t)   // need settings scopes (re-consent)
 registry.registerTool(excelReadTool)
 registry.registerTool(excelWriteTool)
 registry.registerTool(chartGenerateTool)

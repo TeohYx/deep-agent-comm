@@ -9,6 +9,7 @@ export interface ChannelMessage {
   to: string[]
   subject?: string
   body: string                // plain text, cleaned
+  bodyHtml?: string           // HTML body when present
   attachments: ChannelAttachment[]
   receivedAt: number
   references?: string[]       // email threading headers
@@ -23,6 +24,8 @@ export interface ChannelAttachment {
 
 export interface Reply {
   to: string
+  cc?: string[]
+  bcc?: string[]
   subject: string
   body: string
   inReplyTo?: string          // Message-ID being replied to

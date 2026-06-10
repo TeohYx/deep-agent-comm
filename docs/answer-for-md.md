@@ -17,12 +17,13 @@
 | 5 | Low intent confidence | **Clarifying reply** — agent drafts a question back to the sender. |
 | 6 | Identity / multi-tenant | **Single Gmail account** for v1. |
 
-### Technical implication of decision #1 (app password)
+### Technical implication of decision #1 — UPDATED 2026-06-10: migrated IMAP → Gmail API
 
-Using an app password means **IMAP + SMTP**, not the Gmail REST API (which requires OAuth2):
-- Inbound: **IMAP poll** of INBOX (`imapflow` + `mailparser`)
-- Drafts: **IMAP APPEND** to `[Gmail]/Drafts` (shows up as a normal Gmail draft, in-thread)
-- This is simpler to set up and fits poll-based v1. OAuth2 + Gmail API can replace it later without touching anything above L0.
+Originally built on **IMAP + app password** (`imapflow`). **Now migrated to the Gmail REST API (OAuth2)** — the swap the architecture planned ("OAuth2 + Gmail API can replace it later without touching anything above L0"). It did exactly that: only L0 changed.
+- Transport: `GmailApiChannel` (`src/channels/gmail-api.ts`), scope `gmail.modify`. Auth bootstrap: `src/channels/gmail-oauth.ts` (run once → refresh token in `secrets/gmail.token.json`, gitignored).
+- Why migrated: IMAP throttled the account hard (15–47s per op). Gmail API is 1–2.5s, has native threads, and unlocks Sync (History API, Pub/Sub push) + Settings (filters, vacation, send-as) that IMAP structurally cannot do.
+- IMAP `GmailChannel` kept dormant in `src/channels/gmail.ts` for reference; swap back = one line.
+- Still draft-only: `gmail.modify` technically permits send, but no send tool is registered, so the guardrail holds at the tool level.
 
 ---
 
