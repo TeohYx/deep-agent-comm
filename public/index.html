@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Deep Agent Platform</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">◆</div>
+        <div>
+          <h1>Deep Agent</h1>
+          <span class="sub">platform</span>
+        </div>
+      </div>
+
+      <section class="panel">
+        <h2>Tools <span id="tool-count" class="badge">0</span></h2>
+        <ul id="tool-list" class="list"></ul>
+      </section>
+
+      <section class="panel">
+        <h2>Skills <span id="skill-count" class="badge">0</span></h2>
+        <ul id="skill-list" class="list muted-empty"></ul>
+      </section>
+
+      <section class="panel grow">
+        <h2>History</h2>
+        <ul id="history-list" class="list history"></ul>
+      </section>
+    </aside>
+
+    <main class="main">
+      <div id="feed" class="feed">
+        <div class="empty-state">
+          <div class="empty-logo">◆</div>
+          <p>Give the agent a goal.</p>
+          <span>It plans, calls tools, and reports back.</span>
+        </div>
+      </div>
+
+      <form id="goal-form" class="composer">
+        <textarea id="goal-input" placeholder="Describe a goal — e.g. 'What is 4567 * 89, then fetch example.com'" rows="1"></textarea>
+        <button type="submit" id="send-btn">Run</button>
+      </form>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
