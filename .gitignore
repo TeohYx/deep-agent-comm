@@ -6,3 +6,7 @@ dist/
 scratch/
 secrets/
 *.token.json
+python/.venv/
+python/data/
+__pycache__/
+*.pyc

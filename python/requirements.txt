@@ -1,0 +1,14 @@
+deepagents
+langgraph
+langgraph-checkpoint-sqlite
+aiosqlite
+langchain-deepseek
+fastapi
+uvicorn[standard]
+python-dotenv
+openpyxl
+httpx
+google-api-python-client
+google-auth
+google-auth-oauthlib
+apscheduler
